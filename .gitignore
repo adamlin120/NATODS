@@ -1,7 +1,6 @@
 cached/
 convlab_data/
-data/data2.0/
-data/data2.1/
+data/
 lightning_logs/
 
 .idea/
