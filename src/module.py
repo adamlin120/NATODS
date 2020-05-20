@@ -1,20 +1,15 @@
-import logging
-import pickle
 from argparse import Namespace, ArgumentParser
-from itertools import chain
 from multiprocessing import cpu_count
-from pathlib import Path
 from typing import Dict
 
 import torch
-from convlab2.util.dataloader.dataset_dataloader import MultiWOZDataloader
 from pytorch_lightning import LightningModule
 from torch import nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 
-from src.data.multiwoz.dataset import MultiWozDataset
-from src.data.vocab import TEXT_FIELD
+from src.data.dataset import MultiWozDataset
+from src.data.ontology import get_domain_slot_pairs
 from src.positional_embedding import PositionalEncoding
 
 
@@ -38,7 +33,15 @@ class NATODS(LightningModule):
         parser.add_argument('--weight_decay', default=0, type=float)
 
         # dataset
-        parser.add_argument('--cached_dir', default='./cached/', type=Path)
+        parser.add_argument('--ontology_path',
+                            default=
+                            'data/data2.1/multi-woz/MULTIWOZ2.1/ontology.json')
+        parser.add_argument('--train_data',
+                            default='./data/data2.1/nadst_train_dials.json')
+        parser.add_argument('--val_data',
+                            default='./data/data2.1/nadst_dev_dials.json')
+        parser.add_argument('--test_data',
+                            default='./data/data2.1/nadst_test_dials.json')
 
         # dataloader
         parser.add_argument('--batch_size', default=64, type=int)
@@ -60,8 +63,6 @@ class NATODS(LightningModule):
                 dim_feedforward=self.hparams.dim_feedforward),
             num_layers=self.hparams.num_layers)
         self.proj = nn.Linear(self.hparams.d_model, self.hparams.vocab_size)
-
-        self.text_field = TEXT_FIELD
 
     def forward(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         # source: (source_seq_len x batch_size x embed_dim)
@@ -128,66 +129,11 @@ class NATODS(LightningModule):
         return optimizer
 
     def prepare_data(self) -> None:
-        self.data = MultiWOZDataloader().load_data(
-            data_dir="convlab_data/multiwoz/",
-            data_key='all',
-            role='sys',
-            utterance=True,
-            dialog_act=True,
-            context=True,
-            context_window_size=0,
-            context_dialog_act=True,
-            belief_state=True,
-            last_opponent_utterance=True,
-            last_self_utterance=True,
-            ontology=True,
-            session_id=True,
-            span_info=True,
-            terminated=True,
-            goal=True)
-        self.train_dataset = self._load_save_dataset('train')
-        self.val_dataset = self._load_save_dataset('val')
-        self.test_dataset = self._load_save_dataset('test')
-        self._load_save_vocab()
-        self._set_dataset_text_field()
-
-    def _load_save_dataset(self, split: str) -> MultiWozDataset:
-        cache_path: Path = self.hparams.cached_dir / f'{split}.pkl'
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        if cache_path.exists():
-            logging.info(f"Loading {split} dataset cache at {cache_path}")
-            dataset = pickle.load(cache_path.open('rb'))
-        else:
-            logging.info(f"Start creating {split} dataset...")
-            dataset = MultiWozDataset(self.data[split])
-            logging.info(f"Saving {split} dataset at {cache_path}")
-            pickle.dump(dataset, cache_path.open('wb'))
-        return dataset
-
-    def _load_save_vocab(self):
-        cache_path: Path = self.hparams.cached_dir / f'vocab.pkl'
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        if cache_path.exists():
-            logging.info(f"Loading vocab at {cache_path}")
-            vocab = pickle.load(cache_path.open('rb'))
-            self.text_field.vocab = vocab
-        else:
-            logging.info(f"Creating vocab")
-            source = list(chain.from_iterable(self.train_dataset.source))
-            targets = [ins['target'].split(' ')
-                       for ins in self.train_dataset + self.val_dataset]
-            contexts = [ins['context'].split(' ')
-                        for ins in self.train_dataset + self.val_dataset]
-            self.text_field.build_vocab(source + targets + contexts,
-                                        min_freq=1)
-            pickle.dump(self.text_field.vocab, cache_path.open('wb'))
-            logging.info(f"Saving vocab at {cache_path}")
-        logging.info(f"Vocab size: {len(self.text_field.vocab)}")
-
-    def _set_dataset_text_field(self):
-        self.train_dataset.text_field = self.text_field
-        self.val_dataset.text_field = self.text_field
-        self.test_dataset.text_field = self.text_field
+        self.domain_slot_pairs = get_domain_slot_pairs(
+            self.hparams.ontology_path)
+        self.train_dataset = MultiWozDataset(self.hparams.train_data)
+        self.val_dataset = MultiWozDataset(self.hparams.val_data)
+        self.test_dataset = MultiWozDataset(self.hparams.test_data)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
