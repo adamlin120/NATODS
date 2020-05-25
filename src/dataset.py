@@ -1,11 +1,10 @@
 from typing import List, Dict, Union
 
-import ipdb
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 
-from src.preprocess import preprocess, TurnState, BatchState
-from src.tokenizer import WordLevelTokenizer, get_tokenizer
+from src.preprocess import TurnState, BatchState
+from src.tokenizer import WordLevelTokenizer
 
 SLOT_TYPES = ['domain', 'slot', 'gate', 'val', 'fertility']
 
@@ -62,15 +61,3 @@ class MultiWozDSTDataset(Dataset):
             batch[f'ids_{attr}_value'] = torch.LongTensor(
                 [enc.ids for enc in batch[f'encoded_{attr}_value']])
         return batch
-
-
-if __name__ == '__main__':
-    train_path = './.data/MultiWoz_2.1_NADST_Version/data2.1/nadst_train_dials.json'
-    ontology_path = './.data/MultiWoz_2.1_NADST_Version/data2.1/multi-woz/MULTIWOZ2.1/ontology.json'
-    vocab_file = 'vocab_file.json'
-    train_turns = preprocess(train_path, ontology_path)
-    tokenizer = get_tokenizer(train_turns, vocab_file)
-    train = MultiWozDSTDataset(train_turns, tokenizer)
-    for batch in DataLoader(train, 2, collate_fn=train.collate_fn):
-        print(batch)
-        ipdb.set_trace()
