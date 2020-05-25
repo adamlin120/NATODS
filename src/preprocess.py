@@ -1,7 +1,8 @@
 import json
-from typing import List, Dict, Tuple
-from pathlib import Path
+from copy import deepcopy
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import List, Dict, Tuple, Optional
 
 from src.ontology import get_domain_slot_pairs
 
@@ -12,6 +13,12 @@ class State:
     slot: str
     value: str
 
+    gate2index: Dict[str, int] = field(default_factory=lambda: {
+        'none': 0,
+        'dontcare': 1,
+        'gen': 2
+    })
+
     @property
     def gate(self) -> str:
         if self.value in {'none'}:
@@ -20,13 +27,20 @@ class State:
             return 'dontcare'
         else:
             return 'gen'
-    
+
+    @property
+    def gate_index(self) -> int:
+        return self.gate2index[self.gate]
+
     @property
     def fertility(self) -> int:
         if self.gate == 'gen':
             return len(self.value.split())
         else:
             return 0
+
+    def __bool__(self):
+        return self.gate == 'none'
 
     def __str__(self):
         return '\t'.join([
@@ -50,6 +64,16 @@ class TurnState:
                ''.join(map(str, self.states)) + '\n'
 
 
+@dataclass
+class BatchState:
+    states: List[State]
+
+    def __getattr__(self, item: str):
+        assert all(s.domain == self.states[0].domain for s in self.states)
+        assert all(s.slot == self.states[0].slot for s in self.states)
+        return [getattr(s, item) for s in self.states]
+
+
 def add_dialogue_index(dialogue: Dict) -> Dict:
     for turn in dialogue['dialogue']:
         turn['dialogue_idx'] = dialogue['dialogue_idx']
@@ -71,7 +95,7 @@ def add_history_transcript(dialogue: Dict) -> Dict:
         for k, v in history.items():
             turn_key = k.split('_', 1)[1]
             history[k].append(turn[turn_key])
-        turn.update(history)
+        turn.update(deepcopy(history))
     assert all(all(k in turn for k in history.keys())
                for turn in dialogue['dialogue'])
     return dialogue
@@ -122,27 +146,22 @@ def _concat_transcript(
         sys = sys.strip()
         user = user.strip()
         if sys:
-            history += " SYSTEM_BOS " + sys
-        history += " USER_BOS " + user
+            history += " [SYSTEM] " + sys
+        history += " [USER] " + user
     return history.strip()
 
 
 def preprocess(
-    multiwoz_path: str,
-    ontology_path: str,
-    output_path: str
-) -> None:
+        multiwoz_path: str,
+        ontology_path: str,
+        output_path: Optional[str] = None,
+) -> List[TurnState]:
     with open(multiwoz_path) as f:
         data: List[Dict] = json.load(f)
     ontology = get_domain_slot_pairs(ontology_path)
     data = [add_dialogue_index(dial) for dial in data]
     data = [add_history_transcript(dial) for dial in data]
     turns = get_all_turns(data, ontology)
-    Path(output_path).write_text(''.join(map(str, turns)))
-
-
-if __name__ == '__main__':
-    preprocess(
-        './.data/MultiWoz 2.1 NADST Version/data2.1/nadst_dev_dials.json',
-        './.data/MultiWoz 2.1 NADST Version/data2.1/multi-woz/MULTIWOZ2.1/ontology.json',
-        './test')
+    if output_path:
+        Path(output_path).write_text(''.join(map(str, turns)))
+    return turns

@@ -1,87 +1,76 @@
-from pathlib import Path
+from typing import List, Dict, Union
 
-from torchtext.data import Dataset, Example, Field, ReversibleField, LabelField
-from tqdm.auto import tqdm
 import ipdb
+import torch
+from torch.utils.data import Dataset, DataLoader
 
-from src.preprocess import preprocess
+from src.preprocess import preprocess, TurnState, BatchState
+from src.tokenizer import WordLevelTokenizer, get_tokenizer
 
 SLOT_TYPES = ['domain', 'slot', 'gate', 'val', 'fertility']
 
 
-class Example(Example):
-    @classmethod
-    def fromchuck(cls, data, history_fields, slot_fields):
-        ex = cls()
-        data = data.strip().split('\n')
-        assert len(data) == 32
-
-        for (name, field), val in zip(history_fields, data[:2]):
-            setattr(ex, name, field.preprocess(val))
-
-        for vals in data[2:]:
-            vals = vals.strip().split('\t')
-            for val, field, slot in zip(vals, slot_fields, SLOT_TYPES):
-                name = f"{vals[0]}_{vals[1]}_{slot}"
-                if field is not None:
-                    setattr(ex, name, field.preprocess(val))
-        return ex
-
-
 class MultiWozDSTDataset(Dataset):
-    urls = ['http://140.112.29.239:8000/data2.1.tgz']
-    dirname = 'data2.1'
-    name = 'MultiWoz_2.1_NADST_Version'
+    num_slots = 30
+    slot_names = ['attraction_area', 'attraction_name', 'attraction_type',
+                  'hotel_area', 'hotel_day', 'hotel_internet', 'hotel_name',
+                  'hotel_parking', 'hotel_people', 'hotel_pricerange',
+                  'hotel_stars', 'hotel_stay', 'hotel_type',
+                  'restaurant_area', 'restaurant_day', 'restaurant_food',
+                  'restaurant_name', 'restaurant_people',
+                  'restaurant_pricerange', 'restaurant_time',
+                  'taxi_arriveby', 'taxi_departure', 'taxi_destination',
+                  'taxi_leaveat',
+                  'train_arriveby', 'train_day', 'train_departure',
+                  'train_destination', 'train_leaveat', 'train_people']
 
-    def __init__(self, 
-                 path, 
-                 history_fields, 
-                 slot_fields, 
-                 **kwargs):
-        fields = history_fields + slot_fields
-        chucks = path.read_text().strip().split('\n\n')
-        examples = [Example.fromchuck(chuck, history_fields, slot_fields) 
-                    for chuck in tqdm(chucks)]
-        super(MultiWozDSTDataset, self).__init__(examples, fields, **kwargs)
+    max_length = 512
 
-    @classmethod
-    def splits(cls,
-               history_fields, 
-               slot_fields,
-               root=".data",
-               train="nadst_train_dials.json",
-               validation="nadst_dev_dials.json",
-               test="nadst_test_dials.json",
-               **kwargs):
-        assert len(history_fields) == 2
-        assert len(slot_fields) == 5
-        cls.download(root)
-        dirname = Path(root) / cls.name / cls.dirname 
-        train = dirname / train
-        validation = dirname / validation
-        test = dirname / test
-        ontology_path = dirname / 'multi-woz/MULTIWOZ2.1/ontology.json'
+    def __init__(self,
+                 turns: List[TurnState],
+                 tokenizer: WordLevelTokenizer
+                 ):
+        self.turns = turns
+        self.tokenizer = tokenizer
+        self.tokenizer.enable_padding()
+        self.tokenizer.enable_truncation(MultiWozDSTDataset.max_length)
 
-        train_processed = dirname / 'train_processed.txt'
-        validation_processed = dirname / 'validation_processed.txt'
-        test_processed = dirname / 'test_processed.txt'
+    def __len__(self) -> len:
+        return len(self.turns)
 
-        preprocess(train, ontology_path, train_processed)
-        preprocess(validation, ontology_path, validation_processed)
-        preprocess(test, ontology_path, test_processed)
+    def __getitem__(self, index: int) -> TurnState:
+        return self.turns[index]
 
-        train_data = cls(train_processed, history_fields, slot_fields)
-        val_data = cls(validation_processed, history_fields, slot_fields)
-        test_data = cls(test_processed, history_fields, slot_fields)
-        return tuple(d for d in (train_data, val_data, test_data)
-                     if d is not None)
+    def collate_fn(self,
+                   examples: List[TurnState]
+                   ) -> Dict[str, Union[List[str], BatchState]]:
+        batch = {}
+        for attr in ['history', 'delex_history']:
+            batch[attr] = [getattr(example, attr)
+                           for example in examples]
+            batch[f'encoded_{attr}'] = self.tokenizer.encode_batch(batch[attr])
+            batch[f'ids_{attr}'] = torch.LongTensor(
+                [enc.ids for enc in batch[f'encoded_{attr}']])
+        for idx, attr in zip(range(MultiWozDSTDataset.num_slots),
+                             MultiWozDSTDataset.slot_names):
+            batch[attr] = BatchState([example.states[idx]
+                                      for example in examples])
+            batch[f'{attr}_gate'] = torch.LongTensor(batch[attr].gate_index)
+            batch[f'{attr}_fertility'] = torch.LongTensor(batch[attr].fertility)
+            batch[f'encoded_{attr}_value'] = self.tokenizer.encode_batch(
+                batch[attr].value)
+            batch[f'ids_{attr}_value'] = torch.LongTensor(
+                [enc.ids for enc in batch[f'encoded_{attr}_value']])
+        return batch
 
 
 if __name__ == '__main__':
-    text_field = ReversibleField()
-    gate_field = LabelField()
-    fertility_field = LabelField()
-    history_fields = [('history', text_field), ('history_delex', text_field)]
-    slot_fields = [('attraction_area_domain', text_field), text_field, gate_field, text_field, fertility_field]
-    train, val, test = MultiWozDSTDataset.splits(history_fields, slot_fields)
-    ipdb.set_trace()
+    train_path = './.data/MultiWoz_2.1_NADST_Version/data2.1/nadst_train_dials.json'
+    ontology_path = './.data/MultiWoz_2.1_NADST_Version/data2.1/multi-woz/MULTIWOZ2.1/ontology.json'
+    vocab_file = 'vocab_file.json'
+    train_turns = preprocess(train_path, ontology_path)
+    tokenizer = get_tokenizer(train_turns, vocab_file)
+    train = MultiWozDSTDataset(train_turns, tokenizer)
+    for batch in DataLoader(train, 2, collate_fn=train.collate_fn):
+        print(batch)
+        ipdb.set_trace()

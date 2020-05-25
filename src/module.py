@@ -1,15 +1,17 @@
 from argparse import Namespace, ArgumentParser
 from typing import Dict
 
+import ipdb
 import torch
 from pytorch_lightning import LightningModule
 from torch import nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 
-from src.preprocess import MultiWozDataset
-from src.ontology import get_domain_slot_pairs
+from src.dataset import MultiWozDSTDataset
 from src.positional_embedding import PositionalEncoding
+from src.preprocess import preprocess
+from src.tokenizer import get_tokenizer
 
 
 class NATODS(LightningModule):
@@ -32,11 +34,18 @@ class NATODS(LightningModule):
         parser.add_argument('--weight_decay', default=0, type=float)
 
         # dataset
+        parser.add_argument('--train_path',
+                            default='./.data/MultiWoz_2.1_NADST_Version/data2.1/nadst_train_dials.json')
+        parser.add_argument('--val_path',
+                            default='./.data/MultiWoz_2.1_NADST_Version/data2.1/nadst_dev_dials.json')
+        parser.add_argument('--test_path',
+                            default='./.data/MultiWoz_2.1_NADST_Version/data2.1/nadst_test_dials.json')
         parser.add_argument('--ontology_path',
-                            default='../data/data2.1/multi-woz/MULTIWOZ2.1/ontology.json')
+                            default='./.data/MultiWoz_2.1_NADST_Version/data2.1/multi-woz/MULTIWOZ2.1/ontology.json')
+        parser.add_argument('--vocab_path', default='./vocab_file.json')
 
         # dataloader
-        parser.add_argument('--batch_size', default=64, type=int)
+        parser.add_argument('--batch_size', default=4, type=int)
 
         return parser
 
@@ -56,7 +65,16 @@ class NATODS(LightningModule):
             num_layers=self.hparams.num_layers)
         self.proj = nn.Linear(self.hparams.d_model, self.hparams.vocab_size)
 
-    def forward(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(self,
+                batch: Dict[str, torch.Tensor]
+                ) -> torch.Tensor:
+        ipdb.set_trace()
+        pass
+
+    def _calculate_loss(self,
+                        logits: torch.Tensor,
+                        batch: Dict
+                        ) -> torch.Tensor:
         pass
 
     def training_step(self, batch, batch_idx):
@@ -90,11 +108,16 @@ class NATODS(LightningModule):
         return optimizer
 
     def prepare_data(self) -> None:
-        self.domain_slot_pairs = get_domain_slot_pairs(
-            self.hparams.ontology_path)
-        self.train_dataset = MultiWozDataset(self.hparams.train_data)
-        self.val_dataset = MultiWozDataset(self.hparams.val_data)
-        self.test_dataset = MultiWozDataset(self.hparams.test_data)
+        train_turns = preprocess(self.hparams.train_path,
+                                 self.hparams.ontology_path)
+        val_turns = preprocess(self.hparams.val_path,
+                               self.hparams.ontology_path)
+        test_turns = preprocess(self.hparams.test_path,
+                                self.hparams.ontology_path)
+        self.tokenizer = get_tokenizer(train_turns, self.hparams.vocab_path)
+        self.train_dataset = MultiWozDSTDataset(train_turns, self.tokenizer)
+        self.val_dataset = MultiWozDSTDataset(val_turns, self.tokenizer)
+        self.test_dataset = MultiWozDSTDataset(test_turns, self.tokenizer)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
