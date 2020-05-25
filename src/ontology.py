@@ -19,7 +19,7 @@ def get_domain_slot_pairs(ontology_path: str) -> List[Tuple[str, str]]:
 
 
     Returns:
-        List of all (domain, slot) pairs
+        List of (domain, slot) pairs
 
     """
     with open(ontology_path) as f:

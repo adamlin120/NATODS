@@ -7,10 +7,9 @@ setup(name='src',
       description='Describe Your Cool Project',
       author='',
       author_email='',
-      url='https://github.com/williamFalcon/pytorch-lightning-conference-seed',  # REPLACE WITH YOUR OWN GITHUB PROJECT LINK
+      url='https://github.com/williamFalcon/pytorch-lightning-conference-seed',
       install_requires=[
             'pytorch-lightning'
       ],
       packages=find_packages()
       )
-

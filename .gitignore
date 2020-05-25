@@ -1,6 +1,6 @@
 cached/
 convlab_data/
-data/
+.data/
 lightning_logs/
 
 # Byte-compiled / optimized / DLL files

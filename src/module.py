@@ -1,5 +1,4 @@
 from argparse import Namespace, ArgumentParser
-from multiprocessing import cpu_count
 from typing import Dict
 
 import torch
@@ -8,8 +7,8 @@ from torch import nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 
-from src.data.dataset import MultiWozDataset
-from src.data.ontology import get_domain_slot_pairs
+from src.preprocess import MultiWozDataset
+from src.ontology import get_domain_slot_pairs
 from src.positional_embedding import PositionalEncoding
 
 
@@ -34,14 +33,7 @@ class NATODS(LightningModule):
 
         # dataset
         parser.add_argument('--ontology_path',
-                            default=
-                            'data/data2.1/multi-woz/MULTIWOZ2.1/ontology.json')
-        parser.add_argument('--train_data',
-                            default='./data/data2.1/nadst_train_dials.json')
-        parser.add_argument('--val_data',
-                            default='./data/data2.1/nadst_dev_dials.json')
-        parser.add_argument('--test_data',
-                            default='./data/data2.1/nadst_test_dials.json')
+                            default='../data/data2.1/multi-woz/MULTIWOZ2.1/ontology.json')
 
         # dataloader
         parser.add_argument('--batch_size', default=64, type=int)
@@ -65,38 +57,7 @@ class NATODS(LightningModule):
         self.proj = nn.Linear(self.hparams.d_model, self.hparams.vocab_size)
 
     def forward(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
-        # source: (source_seq_len x batch_size x embed_dim)
-        domain = self.embedding(batch['domain']).transpose(0, 1)
-        # slot: (source_seq_len x batch_size x embed_dim)
-        slot = self.embedding(batch['slot']).transpose(0, 1)
-        # embedded_source: (source_seq_len x batch_size x embed_dim)
-        embedded_source = self.pos_embedding(domain + slot)
-        # encoded_tokens: (source_seq_len x batch_size x d_model)
-        encoded_tokens = self.encoder(embedded_source)
-        # logits: (max_seq_len x batch_size x vocab_size)
-        logits = self.proj(encoded_tokens)
-        return logits
-
-    def _calculate_loss(self,
-                        logits: torch.Tensor,
-                        batch: Dict[str, torch.Tensor]
-                        ) -> torch.Tensor:
-        # log_probs: (max_seq_len x batch_size x vocab_size)
-        log_probs = logits.log_softmax(-1)
-        # target: (batch_size x max_seq_len)
-        target = batch['target'].transpose(0, 1)
-        # source_lengths: (batch_size)
-        source_lengths = batch['source_lengths']
-        # target_lengths: (batch_size)
-        target_lengths = batch['target_lengths']
-        assert source_lengths.max() >= target_lengths.max()
-        loss = self.criterion(
-            log_probs=log_probs,
-            targets=target,
-            input_lengths=source_lengths,
-            target_lengths=target_lengths,
-        )
-        return loss
+        pass
 
     def training_step(self, batch, batch_idx):
         logits = self.forward(batch)
@@ -141,7 +102,6 @@ class NATODS(LightningModule):
             batch_size=self.hparams.batch_size,
             shuffle=True,
             collate_fn=self.train_dataset.collate_fn,
-            num_workers=cpu_count()
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -149,7 +109,6 @@ class NATODS(LightningModule):
             self.val_dataset,
             batch_size=self.hparams.batch_size,
             collate_fn=self.val_dataset.collate_fn,
-            num_workers=cpu_count()
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -157,5 +116,4 @@ class NATODS(LightningModule):
             self.test_dataset,
             batch_size=self.hparams.batch_size,
             collate_fn=self.test_dataset.collate_fn,
-            num_workers=cpu_count()
         )
