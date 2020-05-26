@@ -5,22 +5,13 @@ from torch.utils.data import Dataset
 
 from src.preprocess import TurnState, BatchState
 from src.tokenizer import WordLevelTokenizer
+from src.ontology import slots
 
 SLOT_TYPES = ['domain', 'slot', 'gate', 'val', 'fertility']
 
 
 class MultiWozDSTDataset(Dataset):
-    slot_names = ['attraction_area', 'attraction_name', 'attraction_type',
-                  'hotel_area', 'hotel_day', 'hotel_internet', 'hotel_name',
-                  'hotel_parking', 'hotel_people', 'hotel_pricerange',
-                  'hotel_stars', 'hotel_stay', 'hotel_type',
-                  'restaurant_area', 'restaurant_day', 'restaurant_food',
-                  'restaurant_name', 'restaurant_people',
-                  'restaurant_pricerange', 'restaurant_time',
-                  'taxi_arriveby', 'taxi_departure', 'taxi_destination',
-                  'taxi_leaveat',
-                  'train_arriveby', 'train_day', 'train_departure',
-                  'train_destination', 'train_leaveat', 'train_people']
+    slot_names = slots
 
     max_length = 512
     ignore_idx = -100
