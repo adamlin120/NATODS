@@ -40,7 +40,7 @@ class State:
             return 0
 
     def __bool__(self):
-        return self.gate == 'none'
+        return self.gate != 'none'
 
     def __str__(self):
         return '\t'.join([
