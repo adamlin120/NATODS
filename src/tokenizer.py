@@ -1,6 +1,3 @@
-"""
-Tokenizer is mainly from: https://github.com/huggingface/tokenizers/issues/244
-"""
 
 import json
 import logging
@@ -15,25 +12,16 @@ from tokenizers.normalizers import Lowercase, unicode_normalizer_from_str, \
     Sequence
 
 from src.preprocess import TurnState
+from src.ontology import slots
 
 
-UTILS_TOKENS = {"[PAD]": 0, "[UNK]": 1, "[MASK]": 2}
 SYSTEM_BOS = '[SYSTEM]'
 USER_BOS = '[USER]'
+
+UTILS_TOKENS = {"[PAD]": 0, "[UNK]": 1, "[MASK]": 2}
 SLOT_BOS = {
     f'[{d_s}]': len(UTILS_TOKENS) + i
-    for i, d_s in enumerate(
-        ['attraction_area', 'attraction_name', 'attraction_type',
-         'hotel_area', 'hotel_day', 'hotel_internet', 'hotel_name',
-         'hotel_parking', 'hotel_people', 'hotel_pricerange',
-         'hotel_stars', 'hotel_stay', 'hotel_type',
-         'restaurant_area', 'restaurant_day', 'restaurant_food',
-         'restaurant_name', 'restaurant_people',
-         'restaurant_pricerange', 'restaurant_time',
-         'taxi_arriveby', 'taxi_departure', 'taxi_destination',
-         'taxi_leaveat',
-         'train_arriveby', 'train_day', 'train_departure',
-         'train_destination', 'train_leaveat', 'train_people'])
+    for i, d_s in enumerate(slots)
 }
 SPECIAL_TOKENS = {
     **UTILS_TOKENS,
@@ -44,6 +32,8 @@ SPECIAL_TOKENS = {
 class WordLevelTokenizer(BaseTokenizer):
     """ WordLevelTokenizer
     Represents a simple word level tokenization (split on whitespaces).
+    This is mainly from a huggingface/tokenizers issue #244
+    https://github.com/huggingface/tokenizers/issues/244
     """
 
     def __init__(
