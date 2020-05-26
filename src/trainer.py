@@ -1,8 +1,10 @@
 """
 This file runs the main training/val loop, etc... using Lightning Trainer
 """
-from pytorch_lightning import Trainer, seed_everything
 from argparse import ArgumentParser
+
+from pytorch_lightning import Trainer, seed_everything
+
 from src.module import NATODS
 
 # sets seeds for numpy, torch, etc...

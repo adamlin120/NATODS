@@ -63,6 +63,9 @@ class TurnState:
                self.delex_history + '\n' + \
                ''.join(map(str, self.states)) + '\n'
 
+    def __getitem__(self, index: int) -> State:
+        return self.states[index]
+
 
 @dataclass
 class BatchState:

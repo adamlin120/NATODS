@@ -3,8 +3,10 @@ Tokenizer is mainly from: https://github.com/huggingface/tokenizers/issues/244
 """
 
 import json
+import logging
 from collections import Counter
 from typing import Union, Optional, List
+from pathlib import Path
 
 from tokenizers import Tokenizer, AddedToken, pre_tokenizers
 from tokenizers.implementations import BaseTokenizer
@@ -14,7 +16,9 @@ from tokenizers.normalizers import Lowercase, unicode_normalizer_from_str, \
 
 from src.preprocess import TurnState
 
-SPECIAL_TOKENS = {"[PAD]": 0, "[UNK]": 1, "[MASK]": 2}
+
+SPECIAL_TOKENS = {"[PAD]": 0, "[UNK]": 1, "[MASK]": 2,
+                  "[USER]": 3, "[SYSTEM]": 4}
 
 
 class WordLevelTokenizer(BaseTokenizer):
@@ -34,6 +38,7 @@ class WordLevelTokenizer(BaseTokenizer):
             unicode_normalizer: Optional[str] = None,
     ):
         if vocab_file is not None:
+            logging.info(f"Initiating tokenizer at {vocab_file}")
             tokenizer = Tokenizer(
                 WordLevel(vocab=vocab_file, unk_token=unk_token))
         else:
@@ -97,13 +102,19 @@ def collect_words(turns) -> List[str]:
 
 def get_tokenizer(turns: List[TurnState],
                   vocab_file: str) -> WordLevelTokenizer:
+    logging.info("Collecting words for tokenizer")
+    logging.info(f"Special tokens: {SPECIAL_TOKENS}")
     words = collect_words(turns)
+    logging.info(f"Collected words: {len(words)}")
     counter = Counter(words)
+    logging.info(f"Collected unique words: {len(counter)}")
     vocab = {
         **SPECIAL_TOKENS,
         **{w: i + len(SPECIAL_TOKENS) for i, (w, f) in
            enumerate(counter.most_common())}
     }
+    Path(vocab_file).parent.mkdir(exist_ok=True, parents=True)
     json.dump(vocab, open(vocab_file, 'w'))
+    logging.info(f"Saving tokenizer at {vocab_file}")
     tokenizer = WordLevelTokenizer(vocab_file)
     return tokenizer
