@@ -27,12 +27,14 @@ class MultiWozDSTDataset(Dataset):
 
     def __init__(self,
                  turns: List[TurnState],
-                 tokenizer: WordLevelTokenizer
+                 tokenizer: WordLevelTokenizer,
+                 multiplier: int = 1
                  ):
         self.turns = turns
         self.tokenizer = tokenizer
         self.tokenizer.enable_padding()
         self.tokenizer.enable_truncation(MultiWozDSTDataset.max_length)
+        self.multiplier = multiplier
 
     def __len__(self) -> len:
         return len(self.turns)
@@ -64,13 +66,14 @@ class MultiWozDSTDataset(Dataset):
                 [' '.join(
                     domain_slot.split('_')[pos]
                     for domain_slot in self.slot_names
+                    for _ in range(self.multiplier)
                 )] * len(examples)
             batch[f'encoded_input_{input_type}'] = \
                 self.tokenizer.encode_batch(batch[f'input_{input_type}'])
             batch[f'ids_input_{input_type}'] = torch.LongTensor(
                 [enc.ids for enc in batch[f'encoded_input_{input_type}']]).T
-            assert batch[f'ids_input_{input_type}'].size() \
-                   == (len(MultiWozDSTDataset.slot_names), len(examples))
+            assert batch[f'ids_input_{input_type}'].size() == \
+                   (self.multiplier * len(self.slot_names), len(examples))
 
         # slot gate, fertility
         batch['gate'] = torch.LongTensor(
