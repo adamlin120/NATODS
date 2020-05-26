@@ -99,7 +99,8 @@ class MultiWozDSTDataset(Dataset):
 
         # slot value
         batch['value_str'] = [
-            ' '.join(state.value for state in example if state.fertility)
+            ' '.join(f'[{state.domain}_{state.slot}] {state.value}'
+                     for state in example if state)
             for example in examples
         ]
         batch[f'encoded_value'] = self.tokenizer.encode_batch(

@@ -34,7 +34,7 @@ class State:
 
     @property
     def fertility(self) -> int:
-        if self.gate == 'gen':
+        if self:
             return len(self.value.split())
         else:
             return 0

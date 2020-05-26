@@ -17,9 +17,28 @@ from tokenizers.normalizers import Lowercase, unicode_normalizer_from_str, \
 from src.preprocess import TurnState
 
 
+UTILS_TOKENS = {"[PAD]": 0, "[UNK]": 1, "[MASK]": 2}
 SYSTEM_BOS = '[SYSTEM]'
 USER_BOS = '[USER]'
-SPECIAL_TOKENS = {"[PAD]": 0, "[UNK]": 1, "[MASK]": 2}
+SLOT_BOS = {
+    f'[{d_s}]': len(UTILS_TOKENS) + i
+    for i, d_s in enumerate(
+        ['attraction_area', 'attraction_name', 'attraction_type',
+         'hotel_area', 'hotel_day', 'hotel_internet', 'hotel_name',
+         'hotel_parking', 'hotel_people', 'hotel_pricerange',
+         'hotel_stars', 'hotel_stay', 'hotel_type',
+         'restaurant_area', 'restaurant_day', 'restaurant_food',
+         'restaurant_name', 'restaurant_people',
+         'restaurant_pricerange', 'restaurant_time',
+         'taxi_arriveby', 'taxi_departure', 'taxi_destination',
+         'taxi_leaveat',
+         'train_arriveby', 'train_day', 'train_departure',
+         'train_destination', 'train_leaveat', 'train_people'])
+}
+SPECIAL_TOKENS = {
+    **UTILS_TOKENS,
+    **SLOT_BOS
+}
 
 
 class WordLevelTokenizer(BaseTokenizer):
