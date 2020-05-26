@@ -17,8 +17,9 @@ from tokenizers.normalizers import Lowercase, unicode_normalizer_from_str, \
 from src.preprocess import TurnState
 
 
-SPECIAL_TOKENS = {"[PAD]": 0, "[UNK]": 1, "[MASK]": 2,
-                  "[USER]": 3, "[SYSTEM]": 4}
+SYSTEM_BOS = '[SYSTEM]'
+USER_BOS = '[USER]'
+SPECIAL_TOKENS = {"[PAD]": 0, "[UNK]": 1, "[MASK]": 2}
 
 
 class WordLevelTokenizer(BaseTokenizer):
@@ -32,8 +33,6 @@ class WordLevelTokenizer(BaseTokenizer):
             unk_token: Union[str, AddedToken] = "[UNK]",
             pad_token: Union[str, AddedToken] = "[PAD]",
             mask_token: Union[str, AddedToken] = "[MASK]",
-            system_token: Union[str, AddedToken] = "[SYSTEM]",
-            user_token: Union[str, AddedToken] = "[USER]",
             lowercase: bool = False,
             unicode_normalizer: Optional[str] = None,
     ):
@@ -51,10 +50,6 @@ class WordLevelTokenizer(BaseTokenizer):
             tokenizer.add_special_tokens([str(pad_token)])
         if tokenizer.token_to_id(str(mask_token)) is not None:
             tokenizer.add_special_tokens([str(mask_token)])
-        if tokenizer.token_to_id(str(system_token)) is not None:
-            tokenizer.add_special_tokens([str(system_token)])
-        if tokenizer.token_to_id(str(user_token)) is not None:
-            tokenizer.add_special_tokens([str(user_token)])
 
         # Check for Unicode normalization first (before everything else)
         normalizers = []
@@ -79,8 +74,6 @@ class WordLevelTokenizer(BaseTokenizer):
             "unk_token": unk_token,
             "pad_token": pad_token,
             "mask_token": mask_token,
-            "system_token": system_token,
-            "user_token": user_token,
             "lowercase": lowercase,
             "unicode_normalizer": unicode_normalizer,
         }
