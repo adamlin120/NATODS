@@ -16,7 +16,7 @@ from src.dataset import MultiWozDSTDataset
 from src.positional_embedding import PositionalEncoding
 
 
-class NATODS(LightningModule):
+class NADST(LightningModule):
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = ArgumentParser(parents=[parent_parser])
