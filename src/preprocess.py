@@ -88,16 +88,19 @@ def add_history_transcript(dialogue: Dict) -> Dict:
     assert [turn['turn_idx'] for turn in dialogue['dialogue']] \
            == list(range(len(dialogue['dialogue'])))
 
-    history = {
-        'history_system_transcript': [],
-        'history_delex_system_transcript': [],
-        'history_transcript': [],
-        'history_delex_transcript': [],
-    }
-    for turn in dialogue['dialogue']:
-        for k, v in history.items():
-            turn_key = k.split('_', 1)[1]
-            history[k].append(turn[turn_key])
+    for i, turn in enumerate(dialogue['dialogue']):
+        history = {
+            'history_system_transcript': [],
+            'history_delex_system_transcript': [],
+            'history_transcript': [],
+            'history_delex_transcript': [],
+        }
+        for prev_turn in dialogue['dialogue'][:i]:
+            for k, v in history.items():
+                turn_key = k.split('_', 1)[1]
+                history[k].append(prev_turn[turn_key])
+        history['history_transcript'].append(turn['transcript'])
+        history['history_delex_transcript'].append(turn['transcript'])
         turn.update(deepcopy(history))
     assert all(all(k in turn for k in history.keys())
                for turn in dialogue['dialogue'])
@@ -126,7 +129,7 @@ def get_all_turns(
                     turn['history_transcript'],
                     turn['history_system_transcript'])
             delex_history = _concat_transcript(
-                    turn['history_delex_transcript'], 
+                    turn['history_delex_transcript'],
                     turn['history_delex_system_transcript'])
             turns.append(TurnState(states, history, delex_history))
     return turns
@@ -140,7 +143,7 @@ def _parse_domain_slot(domain_slot: str):
 
 
 def _concat_transcript(
-    user_transcript: List[str], 
+    user_transcript: List[str],
     system_transcript: List[str]
 ) -> str:
     assert len(user_transcript) == len(system_transcript)
