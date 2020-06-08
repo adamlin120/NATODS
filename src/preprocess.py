@@ -101,6 +101,8 @@ def add_history_transcript(dialogue: Dict) -> Dict:
                 history[k].append(prev_turn[turn_key])
         history['history_transcript'].append(turn['transcript'])
         history['history_delex_transcript'].append(turn['transcript'])
+        history['history_system_transcript'].append(turn['system_transcript'])
+        history['history_delex_system_transcript'].append(turn['system_transcript'])
         turn.update(deepcopy(history))
     assert all(all(k in turn for k in history.keys())
                for turn in dialogue['dialogue'])
@@ -146,14 +148,12 @@ def _concat_transcript(
     user_transcript: List[str],
     system_transcript: List[str]
 ) -> str:
-    assert len(user_transcript) == len(system_transcript) + 1
-    history = ''
+    assert len(user_transcript) == len(system_transcript)
+    system_transcript.pop(0)
+    history = " [USER] " + user_transcript.pop(0).strip()
     for user, sys in zip(user_transcript, system_transcript):
-        sys = sys.strip()
-        user = user.strip()
-        if sys:
-            history += " [SYSTEM] " + sys
-        history += " [USER] " + user
+        history += " [SYSTEM] " + sys.strip()
+        history += " [USER] " + user.strip()
     return history.strip()
 
 
