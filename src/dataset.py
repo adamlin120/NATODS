@@ -1,87 +1,102 @@
-from pathlib import Path
+from typing import List, Dict, Union
 
-from torchtext.data import Dataset, Example, Field, ReversibleField, LabelField
-from tqdm.auto import tqdm
-import ipdb
+import torch
+from torch.utils.data import Dataset
 
-from src.preprocess import preprocess
+from src.preprocess import TurnState, BatchState
+from src.tokenizer import WordLevelTokenizer
+from src.ontology import slots
 
 SLOT_TYPES = ['domain', 'slot', 'gate', 'val', 'fertility']
 
 
-class Example(Example):
-    @classmethod
-    def fromchuck(cls, data, history_fields, slot_fields):
-        ex = cls()
-        data = data.strip().split('\n')
-        assert len(data) == 32
-
-        for (name, field), val in zip(history_fields, data[:2]):
-            setattr(ex, name, field.preprocess(val))
-
-        for vals in data[2:]:
-            vals = vals.strip().split('\t')
-            for val, field, slot in zip(vals, slot_fields, SLOT_TYPES):
-                name = f"{vals[0]}_{vals[1]}_{slot}"
-                if field is not None:
-                    setattr(ex, name, field.preprocess(val))
-        return ex
-
-
 class MultiWozDSTDataset(Dataset):
-    urls = ['http://140.112.29.239:8000/data2.1.tgz']
-    dirname = 'data2.1'
-    name = 'MultiWoz_2.1_NADST_Version'
+    slot_names = slots
 
-    def __init__(self, 
-                 path, 
-                 history_fields, 
-                 slot_fields, 
-                 **kwargs):
-        fields = history_fields + slot_fields
-        chucks = path.read_text().strip().split('\n\n')
-        examples = [Example.fromchuck(chuck, history_fields, slot_fields) 
-                    for chuck in tqdm(chucks)]
-        super(MultiWozDSTDataset, self).__init__(examples, fields, **kwargs)
+    max_length = 512
+    ignore_idx = -100
 
-    @classmethod
-    def splits(cls,
-               history_fields, 
-               slot_fields,
-               root=".data",
-               train="nadst_train_dials.json",
-               validation="nadst_dev_dials.json",
-               test="nadst_test_dials.json",
-               **kwargs):
-        assert len(history_fields) == 2
-        assert len(slot_fields) == 5
-        cls.download(root)
-        dirname = Path(root) / cls.name / cls.dirname 
-        train = dirname / train
-        validation = dirname / validation
-        test = dirname / test
-        ontology_path = dirname / 'multi-woz/MULTIWOZ2.1/ontology.json'
+    def __init__(self,
+                 turns: List[TurnState],
+                 tokenizer: WordLevelTokenizer,
+                 multiplier: int = 1
+                 ):
+        self.turns = turns
+        self.tokenizer = tokenizer
+        self.tokenizer.enable_padding()
+        self.tokenizer.enable_truncation(MultiWozDSTDataset.max_length)
+        self.multiplier = multiplier
 
-        train_processed = dirname / 'train_processed.txt'
-        validation_processed = dirname / 'validation_processed.txt'
-        test_processed = dirname / 'test_processed.txt'
+    def __len__(self) -> len:
+        return len(self.turns)
 
-        preprocess(train, ontology_path, train_processed)
-        preprocess(validation, ontology_path, validation_processed)
-        preprocess(test, ontology_path, test_processed)
+    def __getitem__(self, index: int) -> TurnState:
+        return self.turns[index]
 
-        train_data = cls(train_processed, history_fields, slot_fields)
-        val_data = cls(validation_processed, history_fields, slot_fields)
-        test_data = cls(test_processed, history_fields, slot_fields)
-        return tuple(d for d in (train_data, val_data, test_data)
-                     if d is not None)
+    def collate_fn(self,
+                   examples: List[TurnState]
+                   ) -> Dict[str, Union[List[str], BatchState]]:
+        batch = {}
+        for idx, attr in enumerate(MultiWozDSTDataset.slot_names):
+            batch[attr] = BatchState([example.states[idx]
+                                      for example in examples])
 
+        # histories
+        for attr in ['history', 'delex_history']:
+            batch[attr] = [getattr(example, attr)
+                           for example in examples]
+            batch[f'encoded_{attr}'] = self.tokenizer.encode_batch(batch[attr])
+            batch[f'mask_{attr}'] = torch.BoolTensor(
+                [enc.attention_mask for enc in batch[f'encoded_{attr}']])
+            batch[f'ids_{attr}'] = torch.LongTensor(
+                [enc.ids for enc in batch[f'encoded_{attr}']]).T
 
-if __name__ == '__main__':
-    text_field = ReversibleField()
-    gate_field = LabelField()
-    fertility_field = LabelField()
-    history_fields = [('history', text_field), ('history_delex', text_field)]
-    slot_fields = [('attraction_area_domain', text_field), text_field, gate_field, text_field, fertility_field]
-    train, val, test = MultiWozDSTDataset.splits(history_fields, slot_fields)
-    ipdb.set_trace()
+        # gate, fertility encoder's input: domain, slot pairs
+        for pos, input_type in enumerate(['domain', 'slot']):
+            batch[f'input_{input_type}'] = \
+                [' '.join(
+                    domain_slot.split('_')[pos]
+                    for domain_slot in self.slot_names
+                    for _ in range(self.multiplier)
+                )] * len(examples)
+            batch[f'encoded_input_{input_type}'] = \
+                self.tokenizer.encode_batch(batch[f'input_{input_type}'])
+            batch[f'ids_input_{input_type}'] = torch.LongTensor(
+                [enc.ids for enc in batch[f'encoded_input_{input_type}']]).T
+            assert batch[f'ids_input_{input_type}'].size() == \
+                   (self.multiplier * len(self.slot_names), len(examples))
+
+        # slot gate, fertility
+        batch['gate'] = torch.LongTensor(
+            [batch[attr].gate_index for attr in MultiWozDSTDataset.slot_names])
+        batch['fertility'] = torch.LongTensor(
+            [batch[attr].fertility for attr in MultiWozDSTDataset.slot_names])
+
+        # value encoder's input: (domain, slot pairs) x fertility
+        for pos, input_type in enumerate(['domain', 'slot']):
+            batch[f'input-fert_{input_type}'] = \
+                [' '.join(
+                    domain_slot.split('_')[pos]
+                    for i, domain_slot in enumerate(self.slot_names)
+                    for _ in range(example[i].fertility)
+                )
+                    for example in examples
+                ]
+            batch[f'encoded_input-fert_{input_type}'] = \
+                self.tokenizer.encode_batch(batch[f'input-fert_{input_type}'])
+            batch[f'ids_input-fert_{input_type}'] = torch.LongTensor(
+                [enc.ids for enc in batch[f'encoded_input-fert_{input_type}']]
+            ).T
+
+        # slot value
+        batch['value_str'] = [
+            ' '.join(f'[{state.domain}_{state.slot}] {state.value}'
+                     for state in example if state)
+            for example in examples
+        ]
+        batch[f'encoded_value'] = self.tokenizer.encode_batch(
+            batch['value_str'])
+        batch[f'value'] = torch.LongTensor(
+            [enc.ids for enc in batch[f'encoded_value']]).T
+        batch[f'value'][batch[f'value']==0] = MultiWozDSTDataset.ignore_idx
+        return batch

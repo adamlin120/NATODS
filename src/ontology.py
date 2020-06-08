@@ -2,6 +2,32 @@ import json
 from typing import Dict, List, Tuple
 
 
+attraction_slots = [
+    'attraction_area', 'attraction_name', 'attraction_type',
+]
+hotel_slots = [
+    'hotel_area', 'hotel_day', 'hotel_internet', 'hotel_name', 'hotel_parking',
+    'hotel_people', 'hotel_pricerange', 'hotel_stars', 'hotel_stay',
+    'hotel_type',
+]
+restaurant_slots = [
+    'restaurant_area', 'restaurant_day', 'restaurant_food', 'restaurant_name',
+    'restaurant_people', 'restaurant_pricerange', 'restaurant_time',
+]
+taxi_slots = [
+    'taxi_arriveby', 'taxi_departure', 'taxi_destination', 'taxi_leaveat',
+]
+train_slots = [
+    'train_arriveby', 'train_day', 'train_departure', 'train_destination',
+    'train_leaveat', 'train_people'
+]
+slots = attraction_slots + \
+        hotel_slots + \
+        restaurant_slots + \
+        taxi_slots + \
+        train_slots
+
+
 def _normalize(name: str) -> str:
     return name.replace(' ', '').lower().strip()
 
