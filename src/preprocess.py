@@ -146,7 +146,7 @@ def _concat_transcript(
     user_transcript: List[str],
     system_transcript: List[str]
 ) -> str:
-    assert len(user_transcript) == len(system_transcript)
+    assert len(user_transcript) == len(system_transcript) + 1
     history = ''
     for user, sys in zip(user_transcript, system_transcript):
         sys = sys.strip()
