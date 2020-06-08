@@ -166,7 +166,6 @@ class NATODS(LightningModule):
             [ctc_collapse(seq, 0) for seq in pred_idxs.tolist()])
         value_str = list(chain.from_iterable([x['value_str'] for x in outputs]))
         assert len(value_str) == len(preds_str)
-        set_trace()
         metrics['accuracy/joint'] = \
             sum(1 if gt == pred else 0
                 for gt, pred in zip(value_str, preds_str)) / len(value_str)
