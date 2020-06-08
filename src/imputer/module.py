@@ -1,5 +1,5 @@
 from argparse import Namespace, ArgumentParser
-from typing import Dict, List
+from typing import Dict, List, Union
 from pathlib import Path
 from itertools import chain
 
@@ -15,7 +15,7 @@ from src.dataset import MultiWozDSTDataset, ctc_collapse
 from src.positional_embedding import PositionalEncoding
 
 
-class NATODS(LightningModule):
+class Imputer(LightningModule):
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = ArgumentParser(parents=[parent_parser])
@@ -30,13 +30,19 @@ class NATODS(LightningModule):
         parser.add_argument('--num_heads', default=4)
         parser.add_argument('--num_passes', default=2)
 
+        # imputer prior scheduling
+        parser.add_argument('--prior_schedule', default=10000, type=int,
+                            help='# steps change the prior from all masked to '
+                                 'partially masked.')
+
         # optimizer
         parser.add_argument('--lr', default=3e-4, type=float)
         parser.add_argument('--weight_decay', default=0, type=float)
 
         # data
-        parser.add_argument('--input_multiplier', default=4, type=int,
-                            help='# times to repeat input in order to make input longer than output')
+        parser.add_argument('--block_size', default=4, type=int,
+                            help='Block sampling size and '
+                                 '# times to repeat input in order to make input longer than output')
 
         # dataset
         parser.add_argument('--train_path',
@@ -89,7 +95,8 @@ class NATODS(LightningModule):
                                     self.tokenizer.get_vocab_size())
 
     def forward(self,
-                batch: Dict[str, torch.Tensor]
+                batch: Dict[str, torch.Tensor],
+                alignment: torch.LongTensor,
                 ) -> torch.Tensor:
         # history
         delex_history_embed = self.pos_embedding(
@@ -100,12 +107,17 @@ class NATODS(LightningModule):
         # value decoder's input
         fert_domain_embed = self.embedding(batch['ids_input_domain'])
         fert_slot_embed = self.embedding(batch['ids_input_slot'])
-        fert_token_embed = self.pos_embedding(
-            fert_domain_embed + fert_slot_embed)
+        fert_token_embed = fert_domain_embed + fert_slot_embed
+
+        # prior alignment
+        prior_align_embed = self.embedding(alignment)
+        assert fert_token_embed.size() == prior_align_embed.size()
+
+        decoder_intput = self.pos_embedding(fert_token_embed + prior_align_embed)
 
         # value decooding
         z_fert_ds = self.forward_attentions(self.value_decoder,
-                                            fert_token_embed,
+                                            decoder_intput,
                                             delex_history_embed,
                                             history_embed)
         value_logit = self.vocab_proj(z_fert_ds)
@@ -159,17 +171,42 @@ class NATODS(LightningModule):
         return metrics
 
     def training_step(self, batch, batch_idx):
-        logits = self.forward(batch)
+        alignment = batch['all_masked_prior_alignment'] \
+            if self.global_step <= self.hparams.prior_schedule else \
+            batch['partial_masked_prior_alignment']
+        logits = self.forward(batch, alignment)
         loss = self.calculate_loss(logits, batch)
         return {'loss': loss, 'log': {'loss/train': loss}}
 
     def validation_step(self, batch, batch_idx):
-        logits = self.forward(batch)
+        alignment = batch['all_masked_prior_alignment']
+        for _ in range(self.hparams.block_size):
+            logits = self.forward(batch, alignment)
+            alignment = self.block_decoding(logits, alignment)
+
         loss = self.calculate_loss(logits, batch)
         return {'loss': loss.cpu(),
-                'preds': logits.cpu().argmax(-1),
+                'preds': alignment,
                 'value_str': batch['value_str'],
                 }
+
+    def block_decoding(self, logits: torch.Tensor, prior: torch.LongTensor
+                       ) -> torch.Tensor:
+        """
+        Args:
+            logits:
+
+        Returns:
+            Posterior
+        """
+        block_size = self.hparams.block_size
+        values, indices = logits.max(-1)
+        for start in range(0, logits.size(0), block_size):
+            block_max_indices = values[start:start+block_size].argmax(0) + start
+            for batch_idx, (seq_idx, max_idx) in enumerate(zip(
+                    block_max_indices, indices.T)):
+                prior[seq_idx, batch_idx] = max_idx[seq_idx]
+        return prior
 
     def validation_epoch_end(self, outputs, mode='val'):
         loss = torch.stack([x['loss'] for x in outputs]).mean()
@@ -203,13 +240,13 @@ class NATODS(LightningModule):
                                 self.hparams.ontology_path)
         self.train_dataset = MultiWozDSTDataset(train_turns,
                                                 self.tokenizer,
-                                                self.hparams.input_multiplier)
+                                                self.hparams.block_size)
         self.val_dataset = MultiWozDSTDataset(val_turns,
                                               self.tokenizer,
-                                              self.hparams.input_multiplier)
+                                              self.hparams.block_size)
         self.test_dataset = MultiWozDSTDataset(test_turns,
                                                self.tokenizer,
-                                               self.hparams.input_multiplier)
+                                               self.hparams.block_size)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(

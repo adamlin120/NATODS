@@ -1,4 +1,5 @@
 from typing import List, Dict, Union
+from random import randint, shuffle
 
 import torch
 from torch.utils.data import Dataset
@@ -98,5 +99,72 @@ class MultiWozDSTDataset(Dataset):
             batch['value_str'])
         batch[f'value'] = torch.LongTensor(
             [enc.ids for enc in batch[f'encoded_value']]).T
-        batch[f'value'][batch[f'value']==0] = MultiWozDSTDataset.ignore_idx
+        batch[f'value'][batch[f'value'] == 0] = MultiWozDSTDataset.ignore_idx
+
+        # imputer
+        batch['all_masked_prior_alignment'] = torch.full_like(
+            batch['ids_input_domain'],
+            fill_value=self.tokenizer.token_to_id('[MASK]'),
+            dtype=torch.long
+        )
+        batch['partial_masked_prior_alignment'] = torch.LongTensor([
+            sample_ctc_alignment(target[target != self.ignore_idx].tolist(),
+                                 batch['ids_input_domain'].size(0),
+                                 self.tokenizer.token_to_id('[PAD]')
+                                 )
+            for target in batch['value'].T
+        ]).T
+
         return batch
+
+
+def rand_sum_arr(size: int, sum: int) -> List[int]:
+    arr = [0] * size
+    for _ in range(sum):
+        arr[randint(0, sum) % size] += 1
+    return arr
+
+
+def sample_ctc_alignment(target: List[int], alignment_size: int, pad: int
+                         ) -> List[int]:
+    """
+    I ignore the problem of duplidating adjacent target elements may not be
+    collapse into the original
+    """
+    alignment = []
+    num_elements = len(target)
+    repeats = rand_sum_arr(2 * num_elements + 1, alignment_size - num_elements)
+    for i in range(len(repeats)):
+        if i % 2:
+            repeats[i] += 1
+    for i, num_rep in enumerate(repeats):
+        for _ in range(num_rep):
+            if i % 2:
+                alignment.append(target[(i-1)//2])
+            else:
+                alignment.append(pad)
+    return alignment
+
+
+def mask_alignment(alignment: List[int], block_size: int, mask:int
+                   ) -> List[int]:
+    num_masks_in_block = randint(0, block_size - 1)
+    for start in range(0, len(alignment), block_size):
+        block_indexs = list(range(block_size))
+        shuffle(block_indexs)
+        block_indexs_to_masked = block_indexs[:num_masks_in_block]
+        for masked_idx in block_indexs_to_masked:
+            alignment[start + masked_idx] = mask
+    return alignment
+
+
+def ctc_collapse(seq: List, padding) -> List:
+    collapse = []
+    prev = None
+    for x in seq:
+        if x == prev or x == padding:
+            pass
+        else:
+            collapse.append(x)
+        prev = x
+    return collapse
